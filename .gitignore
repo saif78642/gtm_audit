@@ -12,6 +12,7 @@ pnpm-debug.log*
 .eslintcache
 
 # Environment
+wrangler.toml
 .env*
 !.env.example
 
