@@ -1,6 +1,8 @@
 // Auth API service — handles login, signup, invite keys, and token storage.
 
-const BASE = (import.meta.env.VITE_WORKER_URL as string | undefined) ?? '';
+const BASE = import.meta.env.DEV 
+  ? ((import.meta.env.VITE_WORKER_URL as string | undefined) ?? 'http://localhost:8787')
+  : ((import.meta.env.VITE_WORKER_URL as string | undefined) ?? '');
 
 const TOKEN_KEY = 'gtm_auth_token';
 

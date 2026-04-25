@@ -1,7 +1,9 @@
 // Resolved at build time from VITE_WORKER_URL env var.
 // Set this in Cloudflare Pages → Settings → Environment Variables (Production & Preview).
-// For local dev, set VITE_WORKER_URL=http://localhost:8787 in your .env file.
-const BASE = (import.meta.env.VITE_WORKER_URL as string | undefined) ?? '';
+// For local dev, it automatically defaults to http://localhost:8787.
+const BASE = import.meta.env.DEV 
+  ? ((import.meta.env.VITE_WORKER_URL as string | undefined) ?? 'http://localhost:8787')
+  : ((import.meta.env.VITE_WORKER_URL as string | undefined) ?? '');
 
 import { getToken } from './authApi';
 

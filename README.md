@@ -181,7 +181,7 @@ pnpm run dev          # → http://localhost:5173
 pnpm run dev:worker   # → http://localhost:8787
 ```
 
-> **Note:** During local development, `chatApi.ts` points to the production Worker URL by default. To test against your local Worker, update the `BASE` constant in `src/services/chatApi.ts` to `http://localhost:8787`.
+> **Note:** During local development, the frontend automatically points to your local Worker (`http://localhost:8787`). You can override this by setting `VITE_WORKER_URL` in your `.env` file.
 
 ### Available Scripts
 
