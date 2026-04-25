@@ -37,13 +37,14 @@ GTM containers can grow to **thousands of lines of JSON** with hundreds of tags,
 
 - 🤖 **AI-Powered Analysis** — Google Gemini 3.1 Pro with full container context
 - ⚡ **Real-Time Streaming** — Responses stream via SSE with a live typing indicator
-- 💬 **Persistent Chat History** — Conversations stored in Cloudflare D1 (SQLite), accessible cross-device
-- 📂 **Session Management** — Create, rename, delete, and resume chat sessions
-- 🗂️ **Smart Date Grouping** — Sessions organized by Today, Yesterday, This Week, Earlier
-- 📝 **Markdown Rendering** — AI responses rendered as rich Markdown with code blocks, tables, and lists
-- 🧠 **Context Caching** — Gemini context cache avoids re-sending ~771KB of container data on every request
-- 📱 **Responsive Design** — Full mobile support with slide-out sidebar drawer
-- 🏷️ **Auto-Titling** — New chats are automatically titled based on the first question
+- 🔒 **Secure Invite-Only Access** — Robust authentication system utilizing Web Crypto API for secure password hashing and unique single-use invitation keys.
+- 💬 **Persistent Chat History** — Conversations stored in Cloudflare D1 (SQLite), securely scoped to individual user accounts.
+- 📂 **Session Management** — Create, rename, delete, and resume chat sessions.
+- 🗂️ **Smart Date Grouping** — Sessions organized by Today, Yesterday, This Week, Earlier.
+- 📝 **Markdown Rendering** — AI responses rendered as rich Markdown with code blocks, tables, and lists.
+- 🧠 **Context Caching** — Gemini context cache avoids re-sending ~771KB of container data on every request.
+- 🎨 **"Bright Horizons" Aesthetics** — A clean, light-themed responsive design featuring subtle wave patterns, a white card-based layout, and modern typography.
+- 🏷️ **Auto-Titling** — New chats are automatically titled based on the first question.
 
 ---
 
@@ -81,8 +82,8 @@ graph TD
 ### How a Chat Message Flows
 
 1. User types a question in the React frontend
-2. Frontend sends `POST /api/chat` with `{ sessionId, question }`
-3. Worker fetches the GTM container from **KV** and conversation history from **D1**
+2. Frontend sends `POST /api/chat` with `{ sessionId, question }` (authenticated via token)
+3. Worker fetches the GTM container from **KV** and conversation history from **D1** for the user
 4. Worker gets or creates a **Gemini Context Cache** (avoids re-sending the container)
 5. Worker calls `generateContentStream()` and pipes chunks as **SSE events**
 6. Frontend parses each SSE chunk and appends it to the message in real-time
@@ -109,7 +110,7 @@ graph TD
 | Technology | Purpose |
 |------------|---------|
 | Cloudflare Workers | Serverless edge compute (runs `worker.ts`) |
-| Cloudflare D1 | Serverless SQLite — chat sessions & messages |
+| Cloudflare D1 | Serverless SQLite — users, auth, chat sessions & messages |
 | Cloudflare KV | Key-Value store — GTM container JSON & Gemini cache |
 | @google/genai | 1.29.0 — Google Gemini SDK |
 | Wrangler | 4.82.2 — Cloudflare CLI |
@@ -121,19 +122,20 @@ graph TD
 ```
 gtm-auditor_L/
 ├── src/                          # Frontend source code
-│   ├── App.tsx                   # Root component — session state manager
+│   ├── App.tsx                   # Root component — session state & routing manager
 │   ├── main.tsx                  # React DOM entry point
-│   ├── index.css                 # Tailwind CSS entry
+│   ├── index.css                 # Tailwind CSS entry with "Bright Horizons" theming
 │   ├── components/
+│   │   ├── Auth/                 # Registration and login components
 │   │   ├── Dashboard.tsx         # Chat interface — messages, input, streaming
-│   │   └── Sidebar.tsx           # Session list — create, rename, delete
+│   │   └── Sidebar.tsx           # Session list, invite key management, logout
 │   ├── services/
 │   │   └── chatApi.ts            # API client — HTTP calls + SSE stream parser
 │   └── utils/
 │       ├── clean-json.ts         # Strips control characters from JSON
 │       └── gtm-minifier.ts       # Minifies GTM container JSON (~50% reduction)
 ├── worker.ts                     # Cloudflare Worker — backend API + Gemini integration
-├── schema.sql                    # D1 database schema (sessions + messages)
+├── schema.sql                    # D1 database schema (auth + sessions + messages)
 ├── wrangler.toml                 # Cloudflare Worker configuration & bindings
 ├── vite.config.ts                # Vite build configuration
 ├── tsconfig.json                 # TypeScript compiler options
@@ -254,7 +256,10 @@ All endpoints are prefixed with `/api` on the Worker URL.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/sessions` | List all chat sessions (most recent first) |
+| `POST` | `/api/auth/register` | Register a new user with an invite key |
+| `POST` | `/api/auth/login` | Authenticate and obtain a token |
+| `POST` | `/api/auth/invite` | Generate a new single-use invite key |
+| `GET` | `/api/sessions` | List all chat sessions for the logged-in user |
 | `POST` | `/api/sessions` | Create a new session (`{ id, title }`) |
 | `PATCH` | `/api/sessions/:id` | Rename a session (`{ title }`) |
 | `DELETE` | `/api/sessions/:id` | Delete a session and all its messages |
@@ -297,30 +302,55 @@ The most critical performance optimization — avoids re-sending ~771KB of conta
 
 ## 🗄️ Database Schema
 
-The D1 database stores persistent chat history across two tables:
+The D1 database ensures secure user accounts and persistent chat history with the following core structure:
 
 ```sql
+-- Users
+CREATE TABLE users (
+  id         TEXT PRIMARY KEY,
+  username   TEXT NOT NULL UNIQUE,
+  email      TEXT NOT NULL UNIQUE,
+  password   TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL DEFAULT 0
+) WITHOUT ROWID;
+
+-- Auth Tokens
+CREATE TABLE auth_tokens (
+  token      TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+) WITHOUT ROWID;
+
+-- Invite Keys (for secure registration)
+CREATE TABLE invite_keys (
+  invite_key TEXT PRIMARY KEY,
+  created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  used_by    TEXT          REFERENCES users(id) ON DELETE SET NULL,
+  used_at    INTEGER,
+  created_at INTEGER NOT NULL
+) WITHOUT ROWID;
+
 -- Sessions
 CREATE TABLE sessions (
-  id         TEXT    PRIMARY KEY,       -- Client-generated UUID
-  title      TEXT    NOT NULL,          -- Display name (auto-titled from first question)
-  created_at INTEGER NOT NULL,          -- Unix timestamp (ms)
-  updated_at INTEGER NOT NULL           -- Unix timestamp (ms)
-);
+  id         TEXT PRIMARY KEY,
+  title      TEXT NOT NULL DEFAULT 'New Chat',
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+) WITHOUT ROWID;
 
 -- Messages
 CREATE TABLE messages (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id TEXT    NOT NULL,          -- FK → sessions.id
-  role       TEXT    NOT NULL,          -- 'user' or 'model'
-  text       TEXT    NOT NULL,          -- Message content
-  created_at INTEGER NOT NULL,          -- Unix timestamp (ms)
-  FOREIGN KEY (session_id) REFERENCES sessions(id)
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  role       TEXT NOT NULL CHECK(role IN ('user', 'model')),
+  text       TEXT NOT NULL,
+  created_at INTEGER NOT NULL
 );
-
--- Index for efficient session message retrieval
-CREATE INDEX idx_messages_session ON messages(session_id, created_at);
 ```
+*(Indices and further details are omitted for brevity, see `schema.sql` for full schema including fast lookup structures)*
 
 ---
 
@@ -330,8 +360,8 @@ CREATE INDEX idx_messages_session ON messages(session_id, created_at);
 
 | Item | Status | Notes |
 |------|--------|-------|
+| Authentication | **Implemented** | Secure invite-only access. Web Crypto hashing. |
 | CORS | `*` (wildcard) | Restrict to your domain for production |
-| Authentication | None | Add auth if exposing publicly |
 | Rate Limiting | None | Consider adding for API abuse protection |
 | API Key | Stored as Cloudflare secret | Never commit keys to version control |
 
