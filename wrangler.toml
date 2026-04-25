@@ -1,0 +1,13 @@
+name = "gtm-auditor-server"
+main = "worker.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[kv_namespaces]]
+binding = "GTM_CONTAINER"
+id = "34c70e0d7e454cd5b7f96bbfc42b4954"
+
+[[d1_databases]]
+binding = "gtm_chat_history"
+database_name = "gtm-chat-history"
+database_id = "dedc40ee-7534-4114-a48d-d6c737276a24"
