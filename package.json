@@ -12,28 +12,29 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@google/genai": "^1.29.0",
+    "@google/genai": "^1.51.0",
     "@tailwindcss/typography": "^0.5.19",
-    "@tailwindcss/vite": "^4.1.14",
-    "@vitejs/plugin-react": "^5.0.4",
+    "@tailwindcss/vite": "^4.2.4",
+    "@vitejs/plugin-react": "^5.2.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.546.0",
-    "motion": "^12.23.24",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "motion": "^12.38.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
     "react-markdown": "^10.1.0",
     "tailwind-merge": "^3.5.0",
-    "vite": "^6.2.0"
+    "vite": "^6.4.2"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0",
+    "@cloudflare/workers-types": "^4.20260502.1",
+    "@types/node": "^22.19.17",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "autoprefixer": "^10.4.21",
-    "tailwindcss": "^4.1.14",
+    "autoprefixer": "^10.5.0",
+    "tailwindcss": "^4.2.4",
     "tsx": "^4.21.0",
-    "typescript": "~5.8.2",
+    "typescript": "~5.8.3",
     "vite": "^6.2.0",
-    "wrangler": "^4.82.2"
+    "wrangler": "^4.87.0"
   }
 }

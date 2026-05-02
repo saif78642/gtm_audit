@@ -1,15 +1,16 @@
-// Resolved at build time from VITE_WORKER_URL env var.
-// Set this in Cloudflare Pages → Settings → Environment Variables (Production & Preview).
-// For local dev, it automatically defaults to http://localhost:8787.
-const BASE = import.meta.env.DEV 
+const BASE = import.meta.env.DEV
   ? ((import.meta.env.VITE_WORKER_URL as string | undefined) ?? 'http://localhost:8787')
   : ((import.meta.env.VITE_WORKER_URL as string | undefined) ?? '');
 
 import { getToken } from './authApi';
 
+export type AppMode = 'gtm' | 'ga4';
+
 export interface ChatSession {
   id: string;
   title: string;
+  mode: AppMode;
+  ga4_property_id?: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -39,20 +40,17 @@ async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
 }
 
 export const chatApi = {
-  /** List all sessions, sorted by most recently updated. */
-  getSessions(): Promise<ChatSession[]> {
-    return apiFetch('/api/sessions');
+  getSessions(mode: AppMode = 'gtm'): Promise<ChatSession[]> {
+    return apiFetch(`/api/sessions?mode=${mode}`);
   },
 
-  /** Create a new session. ID should be a client-generated UUID. */
-  createSession(id: string, title = 'New Chat'): Promise<ChatSession> {
+  createSession(id: string, title = 'New Chat', mode: AppMode = 'gtm', ga4_property_id?: string | null): Promise<ChatSession> {
     return apiFetch('/api/sessions', {
       method: 'POST',
-      body: JSON.stringify({ id, title }),
+      body: JSON.stringify({ id, title, mode, ga4_property_id }),
     });
   },
 
-  /** Rename an existing session. */
   renameSession(id: string, title: string): Promise<{ success: boolean }> {
     return apiFetch(`/api/sessions/${id}`, {
       method: 'PATCH',
@@ -60,32 +58,75 @@ export const chatApi = {
     });
   },
 
-  /** Delete a session and all its messages. */
   deleteSession(id: string): Promise<{ success: boolean }> {
     return apiFetch(`/api/sessions/${id}`, { method: 'DELETE' });
   },
 
-  /** Load all messages for a session, ordered oldest-first. */
   getMessages(sessionId: string): Promise<ChatMessage[]> {
     return apiFetch(`/api/sessions/${sessionId}/messages`);
   },
 
-  /**
-   * Send a chat message and return a streaming reader.
-   * The worker streams SSE chunks: `data: {"text":"..."}\n\n`
-   * Final chunk:                   `data: [DONE]\n\n`
-   *
-   * History is now loaded server-side from D1 — no need to send it.
-   */
+  setSessionGa4Property(sessionId: string, propertyId: string | null): Promise<{ success: boolean; ga4_property_id: string | null }> {
+    return apiFetch(`/api/sessions/${sessionId}/property`, {
+      method: 'PUT',
+      body: JSON.stringify({ ga4_property_id: propertyId }),
+    });
+  },
+
+  getGa4OAuthStatus(): Promise<{ connected: boolean; email?: string | null }> {
+    return apiFetch('/api/ga4/oauth/status');
+  },
+
+  disconnectGa4OAuth(): Promise<{ success: boolean }> {
+    return apiFetch('/api/ga4/oauth/disconnect', { method: 'POST' });
+  },
+
+  getGa4Properties(): Promise<{ properties: { account: string; accountName: string; propertyId: string; propertyName: string }[] }> {
+    return apiFetch('/api/ga4/properties');
+  },
+
   async sendMessageStream(
     sessionId: string,
     question: string,
     onChunk: (text: string) => void,
+    opts?: { mode?: AppMode },
   ): Promise<{ fullAnswer: string }> {
+    const mode = opts?.mode || 'gtm';
+    const body: Record<string, unknown> = { sessionId, question, chatMode: mode };
+    // The backend now resolves ga4_property_id directly from the session.
+
+    // GA4 mode: non-streaming endpoint returns full JSON response
+    if (mode === 'ga4') {
+      const res = await fetch(`${BASE}/api/chat`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as any).error || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json() as { answer: string };
+      const fullAnswer = data.answer || '';
+
+      // Simulate streaming by chunking the response for a smooth UX
+      const chunkSize = 20;
+      for (let i = 0; i < fullAnswer.length; i += chunkSize) {
+        const chunk = fullAnswer.slice(i, i + chunkSize);
+        onChunk(chunk);
+        await new Promise(r => setTimeout(r, 10));
+      }
+
+      return { fullAnswer };
+    }
+
+    // GTM mode: SSE streaming
     const res = await fetch(`${BASE}/api/chat`, {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ sessionId, question }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
@@ -108,16 +149,14 @@ export const chatApi = {
 
       buffer += decoder.decode(value, { stream: true });
 
-      // Process complete SSE lines from the buffer
       const lines = buffer.split('\n');
-      // Keep the last (possibly incomplete) line in the buffer
       buffer = lines.pop() ?? '';
 
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed || !trimmed.startsWith('data: ')) continue;
 
-        const payload = trimmed.slice(6); // strip "data: "
+        const payload = trimmed.slice(6);
 
         if (payload === '[DONE]') {
           return { fullAnswer };
@@ -134,9 +173,8 @@ export const chatApi = {
           }
         } catch (e: any) {
           if (e.message && !e.message.includes('JSON')) {
-            throw e; // Re-throw non-parse errors (like server errors)
+            throw e;
           }
-          // Ignore JSON parse failures on partial lines
         }
       }
     }

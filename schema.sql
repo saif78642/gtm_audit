@@ -46,11 +46,13 @@ CREATE INDEX IF NOT EXISTS idx_invite_keys_created_by
 -- ── Chat History ──────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS sessions (
-  id         TEXT    PRIMARY KEY,
-  title      TEXT    NOT NULL DEFAULT 'New Chat',
-  user_id    TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  id              TEXT    PRIMARY KEY,
+  title           TEXT    NOT NULL DEFAULT 'New Chat',
+  mode            TEXT    NOT NULL DEFAULT 'gtm' CHECK(mode IN ('gtm', 'ga4')),
+  ga4_property_id TEXT,
+  user_id         TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL
 ) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -66,8 +68,24 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_sessions_user
   ON sessions(user_id, updated_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_sessions_user_mode
+  ON sessions(user_id, mode, updated_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_messages_session
   ON messages(session_id, created_at);
+
+-- ── GA4 OAuth Tokens ──────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS ga4_oauth_tokens (
+  user_id         TEXT    PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  access_token    TEXT    NOT NULL,
+  refresh_token   TEXT    NOT NULL,
+  token_expiry    INTEGER NOT NULL,
+  scope           TEXT    NOT NULL,
+  connected_email TEXT,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL
+) WITHOUT ROWID;
 
 -- ── Maintenance ───────────────────────────────────────────────────────────────
 -- Purge expired auth tokens periodically (run manually or via a CRON trigger):

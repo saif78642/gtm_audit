@@ -1,612 +1,0 @@
-GTM Auditor — Complete Project Documentation
-Version: 1.0 · Last Updated: April 15, 2026
-An AI-powered chat application for analyzing Google Tag Manager containers, built on Cloudflare's serverless stack.
-Table of Contents
-Table of Contents	1
-1. Executive Summary	3
-Core Value Proposition	4
-How It Works (30-Second Version)	4
-2. Technology Stack	4
-Frontend	4
-Backend	5
-Tooling	5
-3. System Architecture	6
-High-Level Architecture Diagram	6
-Data Flow Summary	7
-Component Relationship Diagram	7
-4. Project File Map	8
-File Size Reference	9
-5. Frontend — Source Code Walkthrough	10
-5.1 Entry Point: main.tsx	10
-5.2 Root Component: App.tsx (176 lines)	10
-State Variables	10
-Key Behaviors	11
-Layout Structure	11
-5.3 Chat Interface: Dashboard.tsx (260 lines)	12
-Props	12
-State Variables	12
-Refs	12
-Message Send Flow	13
-Rendering States	13
-Auto-Title Logic	14
-5.4 Session Sidebar: Sidebar.tsx (270 lines)	14
-Responsive Behavior	14
-Date Grouping Logic — groupByDate()	14
-Relative Time — relativeTime()	14
-SessionItem Sub-Component	15
-5.5 API Service Layer: chatApi.ts (132 lines)	15
-Base URL	15
-Type Definitions	15
-Methods	16
-SSE Stream Parser (sendMessageStream)	16
-6. Backend — Cloudflare Worker	17
-worker.ts (309 lines)	17
-6.1 Environment Bindings	17
-6.2 Shared Utilities	17
-6.3 Constants	18
-6.4 Request Routing	18
-6.5 Context Cache Management — getOrCreateCache()	19
-6.6 Chat Endpoint — Detailed Walkthrough	21
-7. API Reference	22
-GET /api/sessions	22
-POST /api/sessions	22
-PATCH /api/sessions/:id	23
-DELETE /api/sessions/:id	23
-GET /api/sessions/:id/messages	23
-POST /api/chat	23
-8. Database Schema (Cloudflare D1)	24
-Entity Relationship Diagram	24
-Tables	25
-sessions	25
-messages	26
-Index	26
-Initialization Command	26
-9. Cloudflare KV Storage	26
-Stored Keys	26
-Read Optimization	27
-10. AI Integration — Google Gemini	27
-Model	27
-Configuration	27
-Context Caching Strategy	28
-Benefits	28
-Fallback	29
-11. Real-Time Streaming Pipeline	30
-SSE Wire Format	30
-Frontend Stream Parsing Logic	31
-12. Build & Development	31
-NPM Scripts	31
-Vite Configuration (vite.config.ts)	32
-TypeScript Configuration (tsconfig.json)	32
-Local Development Workflow	33
-13. Deployment	33
-Infrastructure Overview	33
-Frontend Deployment (Cloudflare Pages)	34
-Backend Deployment (Cloudflare Workers)	34
-Wrangler Configuration Details	34
-First-Time Setup Checklist	35
-14. Environment Variables & Secrets	35
-.env File (Local Development)	35
-Cloudflare Worker Secrets	35
-Cloudflare Bindings (via wrangler.toml)	36
-15. Utility Modules	36
-15.1 GTM Minifier — gtm-minifier.ts (320 lines)	36
-15.2 JSON Cleaner — clean-json.ts (10 lines)	37
-15.3 Minification Script — get-minified.js (10 lines)	37
-
-1. Executive Summary
-GTM Auditor is a full-stack, AI-powered web application that lets users ask natural-language questions about their Google Tag Manager (GTM) container configuration. The application ingests a raw GTM container JSON export, feeds it to Google's Gemini LLM as persistent context, and provides an interactive chat interface where users receive streamed, real-time AI analysis of their tags, triggers, variables, consent settings, and overall container health.
-Core Value Proposition
-ProblemSolutionGTM containers can have 100+ tags with thousands of lines of JSON — auditing them manually is slow and error-proneThe AI has the full container pre-loaded as context and can instantly answer questions about any tag, trigger, or variableContainer exports are difficult for non-technical stakeholders to understandThe LLM translates raw JSON into plain-English explanationsTypically, auditing requires exporting ? reading ? cross-referencing trigger IDs ? checking consent settings one by oneUsers simply ask "Are there any missing consent settings?" and get a structured Markdown answerHow It Works (30-Second Version)
-1. A GTM container JSON is pre-loaded into Cloudflare KV storage.
-2. When a user asks a question, the Cloudflare Worker fetches the container from KV, creates (or reuses) a Gemini Context Cache containing that JSON, and streams the AI response back via Server-Sent Events (SSE).
-3. The React frontend renders the streamed Markdown response in real-time with a typing indicator.
-4. Both the question and answer are persisted to Cloudflare D1 (SQLite) for cross-session history.
-2. Technology Stack
-Frontend
-TechnologyVersionPurposeReact19.0.0UI component libraryVite6.2.0Build tool & dev serverTypeScript5.8.2Type-safe JavaScriptTailwind CSS4.1.14Utility-first CSS framework@tailwindcss/typography0.5.19Prose styling for rendered Markdownreact-markdown10.1.0Renders AI responses as rich Markdownlucide-react0.546.0Icon library (FileJson, Send, Menu, etc.)clsx + tailwind-merge2.1.1 / 3.5.0Conditional className compositionmotion12.23.24Animation library (installed, not yet actively used)Backend
-TechnologyPurposeCloudflare WorkersServerless edge compute — runs worker.tsCloudflare D1Serverless SQLite database — stores chat sessions & messagesCloudflare KVKey-Value storage — caches GTM container JSON + Gemini cache name@google/genai1.29.0 — Official Google Generative AI SDK for Gemini API callsWrangler4.82.2 — Cloudflare's CLI for local dev & deploymentTooling
-ToolPurposepnpmPackage manager (primary)tsx4.21.0 — TypeScript execution for Node.js scriptsautoprefixer10.4.21 — CSS vendor prefixing
-3. System Architecture
-High-Level Architecture Diagram
-
-
-Data Flow Summary
-User ? React ? fetch() ? Cloudflare Worker ? {KV, D1, Gemini} ? SSE Stream ? React ? rendered Markdown
-
-
-Component Relationship Diagram
-
-
-4. Project File Map
-gtm-auditor_L/
-??? .env                          # Environment variables (API keys) ?? contains secrets
-??? .gitignore                    # Git exclusions
-??? .wrangler/                    # Wrangler local state (auto-generated)
-??? dist/                         # Vite build output (production frontend)
-?   ??? assets/                   # Hashed JS/CSS bundles
-?   ??? index.html                # Production HTML entry
-??? node_modules/                 # Dependencies
-??? src/                          # Frontend source code
-?   ??? App.tsx                   # Root component — session state manager
-?   ??? main.tsx                  # React DOM entry point
-?   ??? index.css                 # Tailwind CSS import + typography plugin
-?   ??? vite-env.d.ts             # Vite/TypeScript ambient declarations
-?   ??? components/
-?   ?   ??? Dashboard.tsx         # Chat interface — messages, input, streaming
-?   ?   ??? Sidebar.tsx           # Session list — create, rename, delete, group by date
-?   ??? services/
-?   ?   ??? chatApi.ts            # API client — all HTTP calls + SSE stream parser
-?   ??? utils/
-?   ?   ??? clean-json.ts         # Strips control characters from raw JSON strings
-?   ?   ??? gtm-minifier.ts       # Minifies GTM container JSON (320 lines, standalone)
-?   ??? Container/
-?       ??? GTM-T5MTQWP_workspace580 (11 Apr 2026).json  # Raw GTM export (~1.6MB)
-?       ??? container-minified.json                       # Minified version (~771KB)
-??? worker.ts                     # Cloudflare Worker — backend API + Gemini integration
-??? schema.sql                    # D1 database schema (sessions + messages tables)
-??? wrangler.toml                 # Cloudflare Worker configuration & bindings
-??? vite.config.ts                # Vite build configuration
-??? tsconfig.json                 # TypeScript compiler options
-??? package.json                  # Dependencies, scripts, project metadata
-??? index.html                    # Vite HTML template (dev entry point)
-??? get-minified.js               # Standalone script to minify a GTM container
-??? metadata.json                 # App metadata (name, description)
-??? improvements_analysis.md      # Codebase audit & improvement roadmap
-??? pipeline_documentation.md     # Pipeline & architecture documentation
-??? Update Command.txt            # Deployment command reference
-??? README.md                     # Basic setup instructions
-??? package-lock.json             # npm lockfile
-??? pnpm-lock.yaml                # pnpm lockfile
-
-File Size Reference
-FileSizeNotesRaw GTM Container JSON~1.6 MBOriginal export from GTMMinified Container JSON~771 KBAfter minification (~52% reduction)worker.ts~13 KBEntire backend in one fileDashboard.tsx~11 KBLargest frontend componentSidebar.tsx~10 KBSecond largest componentgtm-minifier.ts~11 KB320 lines of GTM-specific minification logicchatApi.ts~4 KBComplete API service layerApp.tsx~7 KBRoot state management5. Frontend — Source Code Walkthrough
-5.1 Entry Point: main.tsx
-Standard React 19 entry point. Renders <App /> inside <StrictMode> into the #root DOM element. Imports index.css which initializes Tailwind CSS and the typography plugin.
-
-?createRoot(document.getElementById('root')!;).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
-?5.2 Root Component: App.tsx (176 lines)
-Purpose: Top-level orchestrator. Owns all session state and renders the layout shell (Header ? Sidebar + Main Panel).
-State Variables
-StateTypePurposesessionsChatSession[]All chat sessions from the databaseactiveSessionIdstring | nullCurrently viewed sessionisSidebarOpenbooleanMobile sidebar drawer toggleisLoadingSessionsbooleanLoading spinner during initial fetchKey Behaviors
-1. On mount (useEffect([], [])): Calls chatApi.getSessions(), populates the session list, and restores the last-active session ID from localStorage('gtm_active_session').
-2. New Chat (handleNewChat): Generates a UUID via crypto.randomUUID(), calls chatApi.createSession(), prepends the new session to state, and sets it as active.
-3. Session Selection (handleSessionSelect): Updates activeSessionId and persists to localStorage.
-4. Session Rename (handleSessionRenamed): Updates the title in local state. Called both from inline edit (Sidebar) and auto-title (Dashboard).
-5. Session Delete (handleSessionDeleted): Calls chatApi.deleteSession(), removes from state, and auto-switches to the next session if the deleted one was active.
-6. Auto-Title (handleFirstReply): After the first AI response in a new session, Dashboard calls this to update the sidebar title.
-Layout Structure
-??????????????????????????????????????????????????????	?
-? Header (h-14): Logo icon + "GTM Auditor – AI Chat"  					?
-?   ?? Mobile menu toggle button (md:hidden)          					?
-?????????????????	??????????????????????????????????????
-? Sidebar (w-72) 		? Main Panel                         					?
-?   • New Chat			?   • Loading spinner  (if loading)  				?
-?   • Session    			?   • <Dashboard>      (if session)  				?
-?     list with  			?   • Welcome screen   (if no session				?
-?     date groups		?                                    						?
-?                			?                                    						?
-? (responsive:   		?                                    						?
-?  hidden on     		?                                    						?
-?  mobile,       			?                                    						?
-?  drawer on     		?                                    						?
-?  toggle)			?                                    						?
-?????????????????	??????????????????????????????????????
-
-5.3 Chat Interface: Dashboard.tsx (260 lines)
-Purpose: Renders the chat conversation for a single session — message history, input field, streaming AI responses, and contextual prompts.
-Props
-PropTypePurposesessionIdstringCurrent session to displayonFirstReply(sessionId, title) => voidCallback to auto-title new sessionsState Variables
-StateTypePurposechatMessagesChatMessage[]All messages (user + model) for this sessionchatInputstringCurrent text in the input fieldisSendingChatbooleanDisables input while a request is in-flightisStreamingbooleanTrue while SSE chunks are arrivingisLoadingMsgsbooleanLoading state during initial message fetchloadErrorstring | nullError message if message loading failsRefs
-RefPurposemessagesEndRefScroll anchor for auto-scroll to bottomisNewSessionRefTracks if this session had zero messages on mount (for auto-titling)hasAutoTitledRefPrevents auto-title from firing more than onceMessage Send Flow
-1. Validate input is non-empty and not already sending.
-2. Clear the input field.
-3. Optimistic UI update: Append the user's message + an empty model placeholder.
-4. Set isSendingChat = true, isStreaming = true.
-5. Call chatApi.sendMessageStream(sessionId, question, onChunk).
-6. Each onChunk callback appends text to the last model message in state.
-7. On success: If this is the first message in a new session, auto-title it.
-8. On error: Replace the model placeholder with an error message.
-9. Finally: Set isSendingChat = false, isStreaming = false.
-Rendering States
-ConditionRendersisLoadingMsgsSpinner with "Loading conversation…"loadErrorRed error bannerchatMessages.length === 0Empty state with 3 suggested promptsmsg.role === 'user'Blue bubble (right-aligned), plain textmsg.role === 'model' with textWhite bubble (left-aligned), Markdown-rendered via <Markdown>msg.role === 'model' with empty text + isStreamingAnimated bouncing dots with "AI is thinking…"Streaming in progress on last model messageBlinking blue cursor ? appended to the endAuto-Title Logic
-
-?function buildAutoTitle(text: string): string {
-  const cleaned = text.trim().replace(/\n+/g, ' ');
-  return cleaned.length > 46 ? `${cleaned.slice(0, 43)}…` : cleaned;
-}
-?Takes the first user question, trims it to 46 characters (with ellipsis if truncated), and uses it as the session title. This fires exactly once per new session, gate-kept by isNewSessionRef and hasAutoTitledRef.
-5.4 Session Sidebar: Sidebar.tsx (270 lines)
-Purpose: Displays the list of chat sessions grouped by date, with inline rename and delete capabilities.
-Responsive Behavior
-The Sidebar component renders two <aside> elements:
-? Desktop (hidden md:flex): Always visible, fixed width w-72.
-? Mobile (md:hidden): Off-screen drawer (-translate-x-full) with slide-in animation (translate-x-0) when isOpen is true. A backdrop overlay bg-black/30 appears behind it.
-Date Grouping Logic — groupByDate()
-Sessions are bucketed into:
-BucketConditionTodayupdated_at >= midnight todayYesterdayupdated_at >= midnight yesterdayThis Weekupdated_at >= 7 days agoEarlierEverything elseEmpty buckets are filtered out.
-Relative Time — relativeTime()
-Time DifferenceDisplay< 1 minute"Just now"< 60 minutes"Xm ago"< 24 hours"Xh ago"< 48 hours"Yesterday"48h+"Apr 12" formatSessionItem Sub-Component
-Each session row has three modes:
-ModeUIidleTitle + timestamp + hover-reveal edit/delete iconseditingInline <input> with ? confirm and ? cancel buttonsconfirming-delete"Delete this chat?" label with red Delete + gray Cancel buttons5.5 API Service Layer: chatApi.ts (132 lines)
-Purpose: Centralizes all HTTP communication with the Cloudflare Worker backend.
-Base URL
-
-?const BASE = 'https://gtm-auditor-server.iammsk.workers.dev';
-?
-Type Definitions
-
-?export interface ChatSession {
-  id: string;
-  title: string;
-  created_at: number;   // Unix timestamp (ms)
-  updated_at: number;   // Unix timestamp (ms)
-}
-  
-export interface ChatMessage {
-  role: 'user' | 'model';
-  text: string;
-}
-?Methods
-MethodHTTPPathDescriptiongetSessions()GET/api/sessionsList all sessions (most recently updated first)createSession(id, title)POST/api/sessionsCreate a new session with client-generated UUIDrenameSession(id, title)PATCH/api/sessions/:idUpdate session titledeleteSession(id)DELETE/api/sessions/:idDelete session + all its messagesgetMessages(sessionId)GET/api/sessions/:id/messagesFetch all messages for a sessionsendMessageStream(sessionId, question, onChunk)POST/api/chatSend question, receive streamed SSE responseSSE Stream Parser (sendMessageStream)
-The core streaming logic in sendMessageStream() works as follows:
-1. Send a POST with { sessionId, question }.
-2. Gets a ReadableStream response body.
-3. Reads chunks via reader.read() in a loop.
-4. Maintains a buffer string for incomplete SSE lines.
-5. Splits on \n, processes complete data: {...} lines.
-6. Calls onChunk(parsed.text) for each text chunk.
-7. Returns { fullAnswer } when it encounters data: [DONE].
-8. Handles { error: "..." } payloads by throwing.
-6. Backend — Cloudflare Worker
-worker.ts (309 lines)
-The entire backend is a single Cloudflare Worker file. It handles routing, database access, KV storage, Gemini API communication, and SSE streaming.
-6.1 Environment Bindings
-
-?interface Env {
-  GEMINI_API_KEY: string;        // Secret — set via `wrangler secret put`
-  GTM_CONTAINER: KVNamespace;     // Cloudflare KV namespace
-  gtm_chat_history: D1Database;   // Cloudflare D1 SQLite database
-}
-?6.2 Shared Utilities
-CORS Headers:
-
-?const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
-?JSON Response Helper:
-
-?function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json', ...CORS },
-  });
-}
-?6.3 Constants
-ConstantValuePurposeGEMINI_MODEL'gemini-3.1-pro-preview'Which Gemini model to useCACHE_TTL_SECONDS1800 (30 min)How long Gemini context caches liveKV_CACHE_KEY'gemini_cache_name'KV key for storing the Gemini cache identifierSYSTEM_INSTRUCTION(see below)System prompt defining the AI's roleSystem Instruction:
-You are an expert Google Tag Manager (GTM) Architect and Analyst. You are assisting a user with their GTM container. You have access to the raw GTM container JSON. Answer the user's questions accurately based on the provided container data. Be concise, professional, and provide specific examples from their container when relevant.
-6.4 Request Routing
-The worker uses manual URL parsing (no framework):
-
-?const parts = url.pathname.split('/').filter(Boolean);
-// parts[0] = 'api', parts[1] = resource, parts[2±] = id/sub-resource
-?
-PatternMethodHandlerOPTIONS *OPTIONSReturns 204 with CORS headers (preflight)/api/sessionsGETList all sessions/api/sessionsPOSTCreate session/api/sessions/:idPATCHRename session/api/sessions/:idDELETEDelete session + messages/api/sessions/:id/messagesGETList messages for session/api/chatPOSTSend question ? stream AI response**404 Not Found
-
-
-
-
-6.5 Context Cache Management — getOrCreateCache()
-This function manages the lifecycle of Gemini API context caches:
-
-Cache Contents:
-When creating a new cache, the worker sends a two-turn conversation:
-? User turn: "Here is the GTM Container JSON for analysis:\n\n{containerJson}"
-? Model turn: "I have received and analyzed the GTM container JSON. I'm ready to answer your questions..."
-? System Instruction: The standard GTM expert prompt
-? TTL: 1800 seconds (30 minutes)
-6.6 Chat Endpoint — Detailed Walkthrough
-The POST /api/chat handler is the most complex route (~120 lines). Here's the step-by-step:
-1. Parse body: Extract { question, sessionId }.
-2. Validate: Ensure question is non-empty, GEMINI_API_KEY exists.
-3. Fetch container: KV.get('container', { cacheTtl: 3600 }) — reads from KV with a 1-hour edge cache.
-4. Initialize Gemini SDK: new GoogleGenAI({ apiKey }).
-5. Build conversation history from D1:
-SELECT role, text FROM messages WHERE session_id = ? ORDER BY created_at ASC
-
-Maps each row to { role, parts: [{ text }] } format, then appends the current question.
-6. Get or create context cache (see §6.5).
-7. Build request config:
-? If cache available: { temperature: 0.3, cachedContent: cacheName }
-? If cache unavailable (fallback): { temperature: 0.3, systemInstruction: SYSTEM_INSTRUCTION + containerJSON }
-8. Create TransformStream for SSE output.
-9. Return the readable side immediately as the HTTP response (with SSE headers).
-10. Async streaming pipeline (runs after response headers are sent):
-? Calls generateContentStream().
-? Loops over chunks, writes data: {"text":"..."}\n\n for each.
-? On stream completion, writes data: [DONE]\n\n.
-? Persists to D1 via a batch of 3 statements:
-1. INSERT the user's question message
-2. INSERT the model's complete answer
-3. UPDATE sessions SET updated_at = now
-? Closes the writer.
-
-
-7. API Reference
-GET /api/sessions
-Description: List all chat sessions, ordered by most recently updated.
-Response:
-
-?[
-  {
-    "id": "a1b2c3d4-...",
-    "title": "What tags fire on page load?",
-    "created_at": 1744700000000,
-    "updated_at": 1744700500000
-  }
-]
-?POST /api/sessions
-Description: Create a new chat session.
-Request Body:
-
-?{
-  "id": "client-generated-uuid",
-  "title": "New Chat"
-}
-?Response (201):
-
-?{
-  "id": "client-generated-uuid",
-  "title": "New Chat",
-  "created_at": 1744700000000,
-  "updated_at": 1744700000000
-}
-?PATCH /api/sessions/:id
-Description: Rename a session.
-Request Body:
-
-?{
-  "title": "GA4 Configuration Audit"
-}
-?Response:
-{ "success": true }
-
-DELETE /api/sessions/:id
-Description: Delete a session and all its messages. Executes as a D1 batch (messages deleted first, then session).
-Response:
-{ "success": true }
-
-GET /api/sessions/:id/messages
-Description: Fetch all messages for a session, ordered chronologically.
-Response:
-
-?[
-  { "role": "user", "text": "What tags fire on page load?" },
-  { "role": "model", "text": "Based on your container, the following tags fire on..." }
-]
-?POST /api/chat
-Description: Send a question and receive a streaming SSE response.
-Request Body:
-
-?{
-  "sessionId": "uuid-of-session",
-  "question": "What tags are missing consent settings?"
-}
-?Response Headers:
-
-?Content-Type: text/event-stream
-Cache-Control: no-cache
-Connection: keep-alive
-?Response Body (SSE stream):
-
-?data: {"text":"Based on your container"}
-  
-data: {"text":", the following tags are"}
-  
-data: {"text":" missing consent settings:\n\n1."}
-  
-data: [DONE]
-?Error Response (within stream):
-data: {"error":"Context cache creation failed"}
-
-
-
-
-
-8. Database Schema (Cloudflare D1)
-Database name: gtm-chat-history
-Database ID: 1d6bcf83-d898-49b3-87af-772bf803cac8
-Schema file: schema.sql
-Entity Relationship Diagram
-
-
-Tables
-sessions
-
-?CREATE TABLE IF NOT EXISTS sessions (
-  id         TEXT    PRIMARY KEY,
-  title      TEXT    NOT NULL DEFAULT 'New Chat',
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-?messages
-
-?CREATE TABLE IF NOT EXISTS messages (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id TEXT    NOT NULL,
-  role       TEXT    NOT NULL CHECK(role IN ('user', 'model')),
-  text       TEXT    NOT NULL,
-  created_at INTEGER NOT NULL,
-  FOREIGN KEY (session_id) REFERENCES sessions(id)
-);
-?Index
-
-?CREATE INDEX IF NOT EXISTS idx_messages_session
-  ON messages(session_id, created_at);
-?A composite index on (session_id, created_at) optimizes the most common query pattern: fetching all messages for a session in chronological order.
-Initialization Command
-npx wrangler d1 execute gtm-chat-history --file=./schema.sql --remote
-
-9. Cloudflare KV Storage
-Namespace Binding: GTM_CONTAINER
-Namespace ID: 81ed8a0de33f447cb05f71a5f2a04d54
-Stored Keys
-KeyValueTTLPurposecontainerThe full GTM container JSON stringNone (persistent)Primary data source for AI analysisgemini_cache_nameGemini API cache identifier (e.g., cachedContents/abc123)1800s (30 min)Cross-request reuse of Gemini context cacheRead Optimization
-
-?const containerJsonString = await env.GTM_CONTAINER.get('container', { cacheTtl: 3600 });
-?The cacheTtl: 3600 option tells Cloudflare to cache this KV read at the edge for up to 1 hour, avoiding round-trips to KV central storage on subsequent reads within the same PoP.
-10. AI Integration — Google Gemini
-Model
-gemini-3.1-pro-preview — Google's latest generation Gemini model.
-Configuration
-ParameterValueRationaletemperature0.3Low temperature for factual, deterministic GTM analysiscachedContent(dynamic)Points to the context cache containing the container JSON
-
-Context Caching Strategy
-The context caching mechanism is the most performance-critical optimization in the system:
-
-
-Benefits
-MetricWithout CachingWith CachingInput tokens per request~200K+ (container + history + question)~1K–5K (history + question only)LatencySlower (Gemini must process container each time)Faster (container pre-processed)API costHigh (charged for all input tokens including repeated container)Lower (cached tokens are billed at reduced rate)Fallback
-If cache creation fails entirely (network error, API issue), the worker falls back to inlining the container JSON directly in the systemInstruction parameter:
-
-?requestConfig.systemInstruction = SYSTEM_INSTRUCTION +
-  `\n\nHere is the GTM Container JSON:\n${containerJsonString}`;
-?
-
-
-
-
-
-
-
-
-
-
-11. Real-Time Streaming Pipeline
-The streaming pipeline uses Server-Sent Events (SSE) over a Cloudflare Worker TransformStream. Here's the full end-to-end flow:
-
-
-SSE Wire Format
-Each SSE event is a single line:
-
-?data: {"text":"chunk content here"}
-?The stream terminator:
-
-?data: [DONE]
-?Error within the stream:
-
-?data: {"error":"error message here"}
-?Frontend Stream Parsing Logic
-The sendMessageStream() method in chatApi.ts implements a robust SSE parser:
-1. Buffer management: Incomplete lines are kept in a buffer variable across reader.read() calls.
-2. Line splitting: buffer.split('\n') — the last (potentially incomplete) element stays in the buffer.
-3. Prefix stripping: Lines not starting with data: are ignored.
-4. JSON parsing: Each data: payload is JSON.parse()-d.
-5. Error handling: Non-JSON parse errors (actual server errors in parsed.error) are re-thrown to the caller.
-6. Termination: data: [DONE] causes the function to return { fullAnswer }.
-12. Build & Development
-NPM Scripts
-ScriptCommandPurposedevviteStart Vite dev server (frontend only, with HMR)dev:workerwrangler devStart Cloudflare Worker locally (backend with D1/KV)buildvite buildProduction build ? dist/ directorypreviewvite previewPreview the production build locallyclean-gtmnode scripts/clean-gtm.mjsClean GTM container JSONlinttsc --noEmitTypeScript type-checking without emitting filesVite Configuration (vite.config.ts)
-
-?export default defineConfig(({mode}) => {
-  return {
-    plugins: [react(), tailwindcss()],
-    resolve: {
-      alias: { '@': path.resolve(__dirname, '.') },
-    },
-    server: {
-      hmr: process.env.DISABLE_HMR !== 'true', // Allow HMR disabling for AI Studio
-    },
-  };
-});
-?Key details:
-? Plugins: React (JSX transform) + Tailwind CSS (v4 Vite plugin).
-? Path alias: @ maps to the project root.
-? HMR toggle: Controlled by DISABLE_HMR env var (used in AI Studio to prevent flickering during agent edits).
-TypeScript Configuration (tsconfig.json)
-OptionValueNotestargetES2022Modern JS outputmoduleESNextES module syntaxlibES2022, DOM, DOM.IterableBrowser + modern JS APIsjsxreact-jsxReact 17+ JSX transform (no import React needed)moduleResolutionbundlerVite-compatible module resolutionstrict(not set)?? Not enabled — should be addednoEmittrueType-checking only; Vite handles transpilationpaths@/* ? ./*Maps @/ to project rootLocal Development Workflow
-# Terminal 1 — Frontend
-pnpm run dev          # http://localhost:5173
-
-# Terminal 2 — Backend  
-pnpm run dev:worker   # http://localhost:8787
-
-[!NOTE]
-During local development, the frontend's chatApi.ts points to the production Worker URL. To test against the local Worker, you would need to temporarily change BASE to http://localhost:8787.
-
-
-
-
-
-13. Deployment
-Infrastructure Overview
-
-Frontend Deployment (Cloudflare Pages)
-# 1. Build the frontend
-pnpm run build
-
-# 2. Deploy to Cloudflare Pages
-npx wrangler pages deploy dist --project-name gtm-auditor
-
-Live URL: https://gtm-auditor-5ks.pages.dev/
-Backend Deployment (Cloudflare Workers)
-npx wrangler deploy
-
-This deploys worker.ts as configured in wrangler.toml:
-
-?name = "gtm-auditor-server"
-main = "worker.ts"
-compatibility_date = "2024-01-01"
-compatibility_flags = ["nodejs_compat"]
-  
-[[kv_namespaces]]
-binding = "GTM_CONTAINER"
-id = "81ed8a0de33f447cb05f71a5f2a04d54"
-  
-[[d1_databases]]
-binding = "gtm_chat_history"
-database_name = "gtm-chat-history"
-database_id = "1d6bcf83-d898-49b3-87af-772bf803cac8"
-?Live URL: https://gtm-auditor-server.iammsk.workers.dev
-Wrangler Configuration Details
-FieldValuePurposenamegtm-auditor-serverWorker name on Cloudflaremainworker.tsEntry scriptcompatibility_date2024-01-01Runtime compatibility targetcompatibility_flags["nodejs_compat"]Enables Node.js APIs in the WorkerFirst-Time Setup Checklist
-1. ? Create Cloudflare account
-2. ? Install Wrangler: npm install -g wrangler
-3. ? Authenticate: wrangler login
-4. ? Create KV namespace and note the ID
-5. ? Upload the GTM container JSON to KV:
-npx wrangler kv:key put --namespace-id=81ed8a0de33f447cb05f71a5f2a04d54 "container" --path=./src/Container/container-minified.json
-
-6. ? Create D1 database: wrangler d1 create gtm-chat-history
-7. ? Run schema migration: npx wrangler d1 execute gtm-chat-history --file=./schema.sql --remote
-8. ? Set the Gemini API key secret: wrangler secret put GEMINI_API_KEY
-9. ? Deploy the Worker: npx wrangler deploy
-10. ? Build and deploy the frontend: pnpm build && npx wrangler pages deploy dist --project-name gtm-auditor
-14. Environment Variables & Secrets
-.env File (Local Development)
-
-?GEMINI_API_KEY="AIza..."       # Google Gemini API key
-APP_URL="MY_APP_URL"            # Not currently used in the codebase
-?Cloudflare Worker Secrets
-SecretHow It's SetUsed ByGEMINI_API_KEYwrangler secret put GEMINI_API_KEYworker.ts ? GoogleGenAI initializationCloudflare Bindings (via wrangler.toml)
-BindingTypeBound NameKV NamespaceKVNamespaceGTM_CONTAINERD1 DatabaseD1Databasegtm_chat_history15. Utility Modules
-15.1 GTM Minifier — gtm-minifier.ts (320 lines)
-Status: ?? Not imported by the active codebase. Used only by the standalone get-minified.js script.
-Purpose: Reduces GTM container JSON size by ~50% through structural transformations:
-TransformationDescriptionStrip metadataRemoves fingerprint, monitoringMetadata, accountId, containerId from all objectsResolve variable referencesReplaces {{_u:123}} tokens with human-readable variable names (e.g., {{Click URL}})Normalize parametersConverts GTM's verbose parameter[] arrays into flat key-value objectsResolve trigger IDsReplaces firingTriggerId: [42] with firingTriggers: ["Page View"]Resolve custom template typesReplaces cvt_1234567_42 with [Template] My Custom TagHumanize trigger conditionsConverts parameter-based conditions into readable strings like "Click URL contains /checkout"Clean custom templatesStrips ___TESTS___ and ___INFO___ sections from template dataCollapse whitespaceReduces consecutive \n sequences15.2 JSON Cleaner — clean-json.ts (10 lines)
-Purpose: Strips control characters (bytes 0x00–0x1F and 0x7F–0x9F) from JSON strings, while preserving newlines (\n), carriage returns (\r), and tabs (\t).
-
-?export function cleanGtmJsonString(originalContent: string): string {
-  return originalContent.replace(/[\x00-\x1F\x7F-\x9F]/g, char => {
-    if (['\n', '\r', '\t'].includes(char)) return char;
-    return '';
-  });
-}
-?15.3 Minification Script — get-minified.js (10 lines)
-Purpose: Standalone Node.js script to run the minifier pipeline on a GTM container file and output the result to stdout. Used for generating the container-minified.json file that gets uploaded to KV.
-node get-minified.js > container-minified.json

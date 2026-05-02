@@ -1,12 +1,13 @@
 import React, { useState, useRef } from 'react';
-import { Plus, MessageSquare, Pencil, Trash2, Check, X, KeyRound, Copy, CheckCheck, Loader2 } from 'lucide-react';
-import { chatApi, type ChatSession } from '../services/chatApi';
+import { Plus, MessageSquare, Pencil, Trash2, Check, X, KeyRound, Copy, CheckCheck, Loader2, BarChart3, FileJson } from 'lucide-react';
+import { chatApi, type ChatSession, type AppMode } from '../services/chatApi';
 import { authApi } from '../services/authApi';
 
 interface SidebarProps {
   sessions: ChatSession[];
   activeSessionId: string | null;
   isOpen: boolean;
+  mode: AppMode;
   onNewChat: () => void;
   onSessionSelect: (id: string) => void;
   onSessionRenamed: (id: string, title: string) => void;
@@ -321,6 +322,7 @@ function InviteKeyPanel({ onClose }: { onClose: () => void }) {
 function SidebarContent({
   sessions,
   activeSessionId,
+  mode,
   onNewChat,
   onSessionSelect,
   onSessionRenamed,
@@ -338,14 +340,32 @@ function SidebarContent({
           id="new-chat-btn"
           className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl font-medium text-sm transition-colors cursor-pointer"
           style={{
-            background: 'linear-gradient(135deg, #e8a317, #f5b731)',
-            color: '#1a2a3a',
-            boxShadow: '0 2px 8px rgba(232, 163, 23, 0.25)',
+            background: mode === 'ga4'
+              ? 'linear-gradient(135deg, #e8710a, #f58634)'
+              : 'linear-gradient(135deg, #e8a317, #f5b731)',
+            color: mode === 'ga4' ? '#ffffff' : '#1a2a3a',
+            boxShadow: mode === 'ga4'
+              ? '0 2px 8px rgba(232, 113, 10, 0.3)'
+              : '0 2px 8px rgba(232, 163, 23, 0.25)',
           }}
         >
-          <Plus className="w-4 h-4" />
+          {mode === 'ga4' ? (
+            <BarChart3 className="w-4 h-4" />
+          ) : (
+            <Plus className="w-4 h-4" />
+          )}
           New Chat
         </button>
+        <div className="flex items-center gap-1.5 mt-2 px-1">
+          {mode === 'ga4' ? (
+            <BarChart3 className="w-3 h-3" style={{ color: '#e8710a' }} />
+          ) : (
+            <FileJson className="w-3 h-3" style={{ color: '#007a87' }} />
+          )}
+          <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: mode === 'ga4' ? '#e8710a' : '#007a87' }}>
+            {mode === 'ga4' ? 'GA4 Chats' : 'GTM Chats'}
+          </span>
+        </div>
       </div>
 
       {/* Session list */}
@@ -402,13 +422,13 @@ function SidebarContent({
 }
 
 export function Sidebar(props: SidebarProps) {
-  const { isOpen, ...rest } = props;
+  const { isOpen, mode, ...rest } = props;
 
   return (
     <>
       {/* Desktop sidebar — always visible at md+ */}
       <aside className="hidden md:flex flex-col w-72 shrink-0 overflow-hidden" style={{ backgroundColor: '#ffffff', borderRight: '1px solid #dce4ec' }}>
-        <SidebarContent {...rest} />
+        <SidebarContent mode={mode} {...rest} />
       </aside>
 
       {/* Mobile drawer */}
@@ -422,7 +442,7 @@ export function Sidebar(props: SidebarProps) {
         style={{ backgroundColor: '#ffffff', borderRight: '1px solid #dce4ec' }}
         aria-label="Chat history sidebar"
       >
-        <SidebarContent {...rest} />
+        <SidebarContent mode={mode} {...rest} />
       </aside>
     </>
   );
