@@ -3,6 +3,7 @@ import { MessageSquare, Send, Loader2, Settings, Check, X, Link as LinkIcon, Log
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { chatApi, type ChatMessage, type AppMode } from '../services/chatApi';
 
 function cn(...inputs: ClassValue[]) {
@@ -200,7 +201,7 @@ export function Dashboard({ sessionId, mode, ga4PropertyId, onFirstReply, onGa4P
     const origin = window.location.origin;
     const workerUrl = import.meta.env.DEV
       ? ((import.meta.env.VITE_WORKER_URL as string | undefined) ?? 'http://localhost:8787')
-      : '';
+      : ((import.meta.env.VITE_WORKER_URL as string | undefined) ?? '');
     const authUrl = `${workerUrl}/api/ga4/oauth/authorize`;
     const token = localStorage.getItem('gtm_auth_token') || '';
     window.open(`${authUrl}?token=${token}`, 'ga4_oauth', 'width=500,height=600');
@@ -405,8 +406,8 @@ export function Dashboard({ sessionId, mode, ga4PropertyId, onFirstReply, onGa4P
                     </span>
                   </div>
                 ) : (
-                  <div className="prose prose-sm max-w-none prose-p:leading-relaxed prose-pre:bg-gray-800 prose-pre:text-gray-100 prose-a:text-blue-600">
-                    <Markdown>{msg.text}</Markdown>
+                  <div className="prose prose-sm max-w-none prose-p:leading-relaxed prose-pre:bg-gray-800 prose-pre:text-gray-100 prose-a:text-blue-600 prose-table:border-collapse prose-th:border prose-th:border-gray-300 prose-th:px-4 prose-th:py-2 prose-th:bg-gray-100 prose-td:border prose-td:border-gray-300 prose-td:px-4 prose-td:py-2">
+                    <Markdown remarkPlugins={[remarkGfm]}>{msg.text}</Markdown>
                     {isStreaming && idx === chatMessages.length - 1 && msg.role === 'model' && (
                       <span className="inline-block w-1.5 h-4 rounded-sm animate-pulse ml-0.5 align-text-bottom" style={{ backgroundColor: mode === 'ga4' ? '#e8710a' : '#e8a317' }} />
                     )}
